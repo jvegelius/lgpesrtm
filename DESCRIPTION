@@ -1,0 +1,20 @@
+Package: lgpesrtm
+Title: Latent Gaussian Process Estimation for Dynamic PET
+Version: 0.0.0.9000
+Authors@R: person("Johan", "Vegelius", email = "johan.vegelius@uu.se",
+    role = c("aut", "cre"))
+Description: Fits the LGPE-SRTM model, simulates dynamic PET data, and
+    illustrates the method alongside lp-ntPET using seeded simulations.
+License: file LICENSE
+Encoding: UTF-8
+Imports:
+    Matrix,
+    mvtnorm,
+    stats
+Suggests:
+    dplyr,
+    ggplot2 (>= 3.4.0),
+    knitr,
+    patchwork,
+    rmarkdown
+VignetteBuilder: knitr

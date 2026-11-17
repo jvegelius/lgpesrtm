@@ -1,0 +1,81 @@
+---
+title: "LGPE-SRTM on simulated PET data"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{LGPE-SRTM on simulated PET data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The Figure 3 example compares LGPE-SRTM with lp-ntPET under transient
+(gamma) and sustained (logistic) activation. Each simulation has 50
+subjects and a group activation amplitude of 0.05. Because the data
+are simulated, the estimated curves can be compared with the truth.
+
+## Simulate and fit
+
+The simulation returns the observed time–activity curves in `df`, the
+latent trajectories in `truth`.
+To fit your own data, supply one row per subject and frame (long format) with columns
+`id`, `time` (minutes from scan start), `ct` (target TAC), `cr`
+(reference TAC), and `onset_time` (minutes from scan start, constant
+within subject). This example also uses a numeric `group` column coded
+0 for control and 1 for activation. The following code shows the gamma case. 
+
+```{r fit, eval=FALSE}
+library(lgpesrtm)
+
+sim <- simulate_lgpe_pet(
+  n = 50, activation_amplitude = 0.05,
+  activation_shape = "gamma", seed = 20260566
+)
+
+df <- sim$df
+
+fit <- fit_lgpe_srtm(
+  df = df,
+  predvars = list(k2a = "group")
+)
+
+fit$k2a[[1]]              # Fitted curve for the first subject
+fit$beta_k2a_mat[, 2]     # Activation-minus-control curve
+```
+
+## Change fitting settings
+
+Pass only the settings you want to change. This example turns on
+iteration plots while keeping the default tolerance of `1e-4` and
+iteration limit of `1000`.
+
+```{r control, eval=FALSE}
+fit_with_plots <- fit_lgpe_srtm(
+  df = df,
+  predvars = list(k2a = "group"),
+  control = list(plot_iterations = TRUE)
+)
+```
+
+The default fit shares a fixed-effect GP amplitude across the
+`k2a` terms. The default kernel length scale is 10 minutes and the
+starting value for the noise variance proportionality factor is 10.
+You can override entries in `par_in`, for example with
+`par_in = list(theta1 = 8)` to use an 8-minute length scale.
+
+## Reproduce the plots
+
+The installed script runs both simulations and fits LGPE-SRTM once per
+scenario and lp-ntPET separately for each subject. The subject panels
+show individual curves and group summaries. The contrast panels show
+the estimated activation-minus-control curves and pointwise intervals
+computed as estimate ± 1.96 standard errors.
+
+```{r figure_ex, eval=FALSE}
+example <- new.env()
+sys.source(system.file("reproduce", "figure_ex.R", package = "lgpesrtm",
+                       mustWork = TRUE), envir = example)
+print(example$p_k2a)
+print(example$p_activation_beta)
+```
+
+The fitting chunks are evaluated on demand so building the vignette
+does not rerun the simulations.

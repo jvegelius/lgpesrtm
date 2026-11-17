@@ -1,0 +1,75 @@
+# LGPE-SRTM scalar-intercept reproduction workflow
+
+This directory is a self-contained set of the four R scripts needed to run
+`reproduce_figure3.R` with the revised fixed-effect parameterisation.
+
+## Model parameterisation
+
+For the reference group,
+
+`k2a_reference(t) = beta_intercept + beta_reference_deviation(t)`,
+
+where `beta_reference_deviation(0) = 0`. The first component is a scalar and
+the remaining `m - 1` coefficients have an anchored GP prior. Each additional
+group/covariate effect remains an ordinary `m`-point GP function.
+
+The simulation initializes the scalar prior variance as
+
+```r
+par_in$Sigma_beta_k2a_intercept <- 0.1^2
+```
+
+Change this value in `R/simulation.R` if another prior scale is intended.
+
+## Requirements
+
+Install the required packages once:
+
+```r
+install.packages(c("ggplot2", "dplyr", "Matrix", "mvtnorm", "patchwork"))
+```
+
+## Run
+
+Set the working directory to this directory (the directory containing this
+README and `reproduce_figure3.R`), then run:
+
+```r
+source("reproduce_figure3.R")
+```
+
+For example, in RStudio open `reproduce_figure3.R`, use **Session > Set Working
+Directory > To Source File Location**, and then click **Source**.
+
+The script sources these files automatically:
+
+- `R/lgpe_srtm.R`
+- `R/simulation.R`
+- `R/lpntpet_comparison.R`
+
+It writes the PDF figures to the working directory.
+
+## New returned quantities
+
+For a fitted object `fit`, the reference-group level and variation test are:
+
+```r
+fit$beta_k2a_intercept
+fit$se_beta_k2a_intercept
+fit$beta_k2a_ref_dev
+fit$se_beta_k2a_ref_dev
+fit$wald_k2a_ref_variation
+fit$df_k2a_ref_variation
+fit$p_k2a_ref_variation
+```
+
+`fit$beta_k2a_mat[, 1]` remains the complete reconstructed reference-group
+function. `fit$beta_k2a_mat[, 2]` remains the group-effect function, so the
+existing Figure 3 plotting code retains its original interpretation.
+
+## Validation note
+
+The scripts include explicit checks of the new prior dimensions before model
+fitting. Their brackets, parentheses, file paths, and cross-file object names
+have also been checked. This environment did not contain an R executable, so a
+full numerical run could not be performed here.
