@@ -1,7 +1,7 @@
 # LGPE-SRTM scalar-intercept reproduction workflow
 
 This directory is a self-contained set of the four R scripts needed to run
-`reproduce_figure3.R` with the revised fixed-effect parameterisation.
+`reproduce_figure_ex.R` with the revised fixed-effect parameterisation.
 
 ## Model parameterisation
 
@@ -12,14 +12,6 @@ For the reference group,
 where `beta_reference_deviation(0) = 0`. The first component is a scalar and
 the remaining `m - 1` coefficients have an anchored GP prior. Each additional
 group/covariate effect remains an ordinary `m`-point GP function.
-
-The simulation initializes the scalar prior variance as
-
-```r
-par_in$Sigma_beta_k2a_intercept <- 0.1^2
-```
-
-Change this value in `R/simulation.R` if another prior scale is intended.
 
 ## Requirements
 
@@ -32,10 +24,10 @@ install.packages(c("ggplot2", "dplyr", "Matrix", "mvtnorm", "patchwork"))
 ## Run
 
 Set the working directory to this directory (the directory containing this
-README and `reproduce_figure3.R`), then run:
+README and `reproduce_figure_ex.R`), then run:
 
 ```r
-source("reproduce_figure3.R")
+source("reproduce_figure_ex.R")
 ```
 
 For example, in RStudio open `reproduce_figure3.R`, use **Session > Set Working
@@ -65,7 +57,7 @@ fit$p_k2a_ref_variation
 
 `fit$beta_k2a_mat[, 1]` remains the complete reconstructed reference-group
 function. `fit$beta_k2a_mat[, 2]` remains the group-effect function, so the
-existing Figure 3 plotting code retains its original interpretation.
+existing Figure ex plotting code retains its original interpretation.
 
 ## Validation note
 
