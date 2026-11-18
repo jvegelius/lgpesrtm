@@ -67,7 +67,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
   }
   
   control <- merge_settings(
-    list(tol = 1e-4, maxiter = 1000, plot_iterations = FALSE),
+    list(tol = 1e-4, maxiter = 1000, plot_iterations = FALSE, theta0 = TRUE),
     control, "control"
   )
   if (!is.numeric(control$tol) || length(control$tol) != 1L ||
@@ -778,13 +778,21 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     
     #optfun(par_beta_theta0_curr)
     
-    if(length(par_beta_theta0_curr)==1){
-      optobj <- optim(par_beta_theta0_curr,fn=optfun,method="Brent",lower=1e-10,upper=10)
+    if(control$theta0==TRUE){
+      if(length(par_beta_theta0_curr)==1){
+        optobj <- optim(par_beta_theta0_curr,fn=optfun,method="Brent",lower=1e-10,upper=10)
+      }else{
+        optobj <- optim(par_beta_theta0_curr,fn=optfun)
+      }
+      
+      par_beta_theta0_new <- optobj$par
+      log_model_evidence <- -optobj$value
     }else{
-      optobj <- optim(par_beta_theta0_curr,fn=optfun)
+      par_beta_theta0_new <- par_beta_theta0_curr
+      log_model_evidence <- -optfun(par_beta_theta0_curr)
     }
     
-    par_beta_theta0_new <- optobj$par
+
     
     # #######Testing
     # if(par_beta_theta0_new<beta_k2a_intercept_curr^2){
@@ -792,7 +800,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     # }
     # ######END TESTING
     
-    log_model_evidence <- -optobj$value
+    
     
     d_par_beta_theta0 <- par_beta_theta0_new - par_beta_theta0_curr
     
