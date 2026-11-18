@@ -30,7 +30,7 @@ README and `reproduce_figure_ex.R`), then run:
 source("reproduce_figure_ex.R")
 ```
 
-For example, in RStudio open `reproduce_figure3.R`, use **Session > Set Working
+For example, in RStudio open `reproduce_figure_ex.R`, use **Session > Set Working
 Directory > To Source File Location**, and then click **Source**.
 
 The script sources these files automatically:
@@ -41,23 +41,6 @@ The script sources these files automatically:
 
 It writes the PDF figures to the working directory.
 
-## New returned quantities
-
-For a fitted object `fit`, the reference-group level and variation test are:
-
-```r
-fit$beta_k2a_intercept
-fit$se_beta_k2a_intercept
-fit$beta_k2a_ref_dev
-fit$se_beta_k2a_ref_dev
-fit$wald_k2a_ref_variation
-fit$df_k2a_ref_variation
-fit$p_k2a_ref_variation
-```
-
-`fit$beta_k2a_mat[, 1]` remains the complete reconstructed reference-group
-function. `fit$beta_k2a_mat[, 2]` remains the group-effect function, so the
-existing Figure ex plotting code retains its original interpretation.
 
 ## Validation note
 
