@@ -1,6 +1,5 @@
 # LGPE-SRTM with a scalar reference-group level and an anchored
 # reference-group time-varying deviation.
-library(Matrix)
 
 rbf_kernel <- function(sn, sm, theta0, theta1) {
   theta0 * exp(-(sn - sm)^2 / theta1^2)
@@ -12,20 +11,20 @@ simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
   omega_dt <- matrix(0, nrow = m, ncol = m)
   diag(omega_dt) <- 1 / dt_vec
   diag(omega_dt[2:m, 1:(m - 1)]) <- -1 / dt_vec[-1]
-  
+
   ct_true <- solve(diag(k2a) + omega_dt) %*%
     (k2 * diag(1, m) + r1 * omega_dt) %*% cr_true
-  
+
   sigma_t_vec <- var_prop * ct_true
   sigma_r_vec <- var_prop * cr_true
   ct_obs <- ct_true + rnorm(m, sd = sqrt(sigma_t_vec))
   cr_obs <- cr_true + rnorm(m, sd = sqrt(sigma_r_vec))
-  
+
   list(
     ct_true = ct_true,
     cr_true = cr_true,
     ct_obs = ct_obs,
-    cr_obs = cr_obs
+    cr_obs = cr_true
   )
 }
 
@@ -41,77 +40,13 @@ simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
 # par_in <- Par_in
 # estpat <- Estpat
 # control <- Control
-
+# sim <- sim_gamma
 # df       = sim$df
 # predvars = sim$predvars
 # par_in   = sim$par_in
 # estpat   = sim$estpat
 # control  = sim$control
-fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
-                          estpat = NULL, control = list()) {
-  merge_settings <- function(defaults, overrides, argument) {
-    keys <- names(overrides)
-    if (!is.list(overrides) ||
-        (length(overrides) && (is.null(keys) || anyNA(keys) ||
-                               any(!nzchar(keys)) || anyDuplicated(keys)))) {
-      stop(argument, " must be a list with unique names")
-    }
-    if (!length(overrides)) return(defaults)
-    unknown <- setdiff(keys, names(defaults))
-    if (length(unknown)) {
-      stop("Unknown ", argument, " setting: ", paste(unknown, collapse = ", "))
-    }
-    # Replace each top-level value as a whole, including subject-level lists.
-    defaults[keys] <- overrides
-    defaults
-  }
-  
-  control <- merge_settings(
-    list(tol = 1e-4, maxiter = 1000, plot_iterations = FALSE, theta0 = TRUE),
-    control, "control"
-  )
-  if (!is.numeric(control$tol) || length(control$tol) != 1L ||
-      !is.finite(control$tol) || control$tol <= 0) {
-    stop("control$tol must be a positive finite number")
-  }
-  if (!is.numeric(control$maxiter) || length(control$maxiter) != 1L ||
-      !is.finite(control$maxiter) || control$maxiter < 1 ||
-      control$maxiter != floor(control$maxiter)) {
-    stop("control$maxiter must be a positive integer")
-  }
-  if (!is.logical(control$plot_iterations) ||
-      length(control$plot_iterations) != 1L || is.na(control$plot_iterations)) {
-    stop("control$plot_iterations must be TRUE or FALSE")
-  }
-  if (length(predvars) == 0L || !is.null(names(predvars))) {
-    predvars <- merge_settings(list(R1 = NULL, k2 = NULL, k2a = NULL),
-                               predvars, "predvars")
-  } else if (!is.list(predvars) || length(predvars) != 3L) {
-    stop("Supply predictors as a named list or as a list of length three")
-  }
-  
-  if (!all(vapply(predvars, function(x) {
-    is.null(x) || (is.character(x) && !anyNA(x))
-  }, logical(1)))) {
-    stop("predvars entries must be character vectors of column names")
-  }
-  predvars <- lapply(predvars, function(x) if (length(x)) x else NULL)
-  
-  required <- c("id", "time", "ct", "cr", "onset_time", unlist(predvars))
-  if (!is.data.frame(df) || !nrow(df) || !all(required %in% names(df))) {
-    stop("df must contain observations and columns: ",
-         paste(unique(required), collapse = ", "))
-  }
-  if (anyNA(df$id)) stop("Subject IDs must be present")
-  numeric_columns <- setdiff(required, "id")
-  if (!all(vapply(df[numeric_columns], function(x) {
-    is.numeric(x) && all(is.finite(x))
-  }, logical(1)))) {
-    stop("Time, TAC, onset and predictor columns must be finite numeric values")
-  }
-  # Preserve subject order for callers supplying subject-level starts.
-  df <- df[order(match(df$id, unique(df$id)), df$time), , drop = FALSE]
-  
+fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
   
   safe_logdet <- function(A) {
     d <- determinant(A, logarithm = TRUE)
@@ -122,7 +57,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     
     as.numeric(d$modulus)
   }
-  
+
   make_gp_cov <- function(grid, theta0, theta1, theta_nu) {
     q <- length(grid)
     K <- matrix(0, nrow = q, ncol = q)
@@ -137,7 +72,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     diag(K) <- rbf_kernel(0, 0, theta0, theta1) + theta_nu
     K
   }
-  
+
   make_anchored_gp_cov <- function(grid, anchor, theta0, theta1,
                                    theta_nu) {
     q <- length(grid)
@@ -168,12 +103,6 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
   for(j in 1:n){
     df_j <- df[df$id==ids[j],]
     t_j <- df_j$time
-    if (length(t_j) < 2L || t_j[1] <= 0 || any(diff(t_j) <= 0)) {
-      stop("Subject ", ids[j], " must have at least two distinct positive times")
-    }
-    if (length(unique(df_j$onset_time)) != 1L) {
-      stop("onset_time must be constant within subject ", ids[j])
-    }
     onset_time_j <- df_j$onset_time[1]
     ts_j <- t_j - onset_time_j   #The domain variable defining variations in k_2a
     ts_j[which(ts_j<0)] <- 0
@@ -182,24 +111,13 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
   }
   ts_all <- unique(sort(ts_all_tot))
   n_all <- length(ts_all_tot)
-  if (is.null(estpat)) {
-    estpat <- list(kernel_par = list(beta_theta0 = matrix(1, 1L, p_k2a)))
-  }
   estpat_beta_theta0 <- estpat$kernel_par$beta_theta0
-  if (!is.matrix(estpat_beta_theta0) || nrow(estpat_beta_theta0) == 0L ||
-      ncol(estpat_beta_theta0) != p_k2a ||
-      anyNA(estpat_beta_theta0) ||
-      any(!estpat_beta_theta0 %in% c(0, 1)) ||
-      any(colSums(estpat_beta_theta0) != 1L) ||
-      any(rowSums(estpat_beta_theta0) == 0L)) {
-    stop("estpat must assign each k2a term to one kernel amplitude")
-  }
   n_restrictions_kernel <- dim(estpat_beta_theta0)[1]
   
   m <- length(ts_all) #Number of unique points in the domain
   if (m < 2) stop("At least two distinct points in ts_all are required")
   m_ref_dev <- m - 1
-  
+
   # k2a fixed effects are parameterised as:
   #   one scalar reference-group level;
   #   m - 1 reference-group deviations, anchored to zero at ts_all[1];
@@ -212,29 +130,6 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
   #############################
   #Collect parameter values
   ############################
-  par_in <- merge_settings(
-    list(
-      R1 = rep(1, n),
-      k2 = rep(0.5, n),
-      k2a = lapply(m_vec, function(frames) rep(0.1, frames)),
-      Sigma_alpha_r1 = matrix(0.12^2),
-      Sigma_alpha_k2 = matrix(0.10^2),
-      Sigma_beta_r1 = diag(1, p_r1),
-      Sigma_beta_k2 = diag(1, p_k2),
-      Sigma_beta_k2a_intercept = 0.1^2,
-      Mu_beta_r1 = matrix(0, p_r1),
-      Mu_beta_k2 = matrix(0, p_k2),
-      Mu_beta_k2a = matrix(0, m * p_k2a),
-      beta_theta0 = rep(1, p_k2a),
-      alpha_theta0 = 0.01^2,
-      theta1 = 10,
-      theta_nu = 1e-9,
-      par_beta_theta0 = rep(0.01, n_restrictions_kernel),
-      var_prop = 10
-    ),
-    par_in, "par_in"
-  )
-  
   #1. Pharmacokinetic parameters (for every subject)
   r1_curr <- par_in$R1
   k2_curr <- par_in$k2
@@ -255,7 +150,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
   sigma_alpha_k2a <- make_gp_cov(ts_all, alpha_theta0_curr,
                                  theta1_curr, theta_nu_curr)
   sigma_alpha_k2a_inv <- solve(sigma_alpha_k2a)
-  
+
   if (is.null(par_in$Sigma_beta_k2a_intercept)) {
     stop("par_in$Sigma_beta_k2a_intercept must specify the prior variance of the scalar k2a reference-group level")
   }
@@ -265,7 +160,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
       sigma_beta_k2a_intercept <= 0) {
     stop("par_in$Sigma_beta_k2a_intercept must be one positive finite number")
   }
-  
+
   make_sigma_beta_k2a <- function(beta_theta0, theta1, theta_nu) {
     K <- as.matrix(bdiag(
       sigma_beta_k2a_intercept,
@@ -282,7 +177,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     }
     K
   }
-  
+
   sigma_beta_k2a <- make_sigma_beta_k2a(beta_theta0_curr,
                                         theta1_curr, theta_nu_curr)
   sigma_beta_k2a_inv <- solve(sigma_beta_k2a)
@@ -359,20 +254,28 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     x_list[[j]] <- matrix(0,nrow=m_j,ncol=p_beta)
     z_list[[j]] <- matrix(0,nrow=m_j,ncol=p_alpha)
     
-    x_list[[j]][,1] <- omega_dt%*%df_j$cr
-    z_list[[j]][,1] <- omega_dt%*%df_j$cr
+    cr_fit <- smooth.spline(x = df_j$time, y = df_j$cr)
+    ct_fit <- smooth.spline(x=df_j$time,y=df_j$ct)
+    
+    cr_smooth <- cr_fit$y
+    ct_smooth <- ct_fit$y
+    
+    
+  
+    x_list[[j]][,1] <- omega_dt%*%cr_smooth
+    z_list[[j]][,1] <- omega_dt%*%cr_smooth
     if(is.null(predvars[[1]])==FALSE){
       for(k in 2:p_r1){
-        x_list[[j]][,k] <- df_j[[predvars[[1]][k-1]]]*omega_dt%*%df_j$cr
+        x_list[[j]][,k] <- df_j[[predvars[[1]][k-1]]]*omega_dt%*%cr_smooth
       }
     } 
     
     #Add the columns in x_j corresponding to k2
-    x_list[[j]][,p_r1+1] <- df_j$cr
-    z_list[[j]][,2] <- df_j$cr
+    x_list[[j]][,p_r1+1] <- cr_smooth
+    z_list[[j]][,2] <- cr_smooth
     if(is.null(predvars[[2]])==FALSE){
       for(k in 2:p_k2){
-        x_list[[j]][,p_r1+k-1] <- df_j[[predvars[[2]][k-1]]]*df_j$cr
+        x_list[[j]][,p_r1+k-1] <- df_j[[predvars[[2]][k-1]]]*cr_smooth
       }
     }
     
@@ -385,12 +288,12 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     #z_list[[j]][1:m_j,1:m+lz] <- diag(df_j$ct)%*%e_j
     
     # Scalar reference-group level.
-    x_list[[j]][, lx + 1] <- -df_j$ct
-    
+    x_list[[j]][, lx + 1] <- -ct_smooth
+
     # Reference-group time variation, anchored to zero at ts_all[1].
     x_list[[j]][, (lx + 2):(lx + m)] <-
-      -diag(df_j$ct) %*% e_j[, -1, drop = FALSE]
-    z_list[[j]][, (lz + 1):(lz + m)] <- -diag(df_j$ct) %*% e_j
+      -diag(ct_smooth) %*% e_j[, -1, drop = FALSE]
+    z_list[[j]][, (lz + 1):(lz + m)] <- -diag(ct_smooth) %*% e_j
     
     
     
@@ -399,7 +302,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
         lx_k <- lx + m*(k-1)
         #x_list[[j]][1:m_j,1:m+lx] <- diag(df_j[[predvars[[3]]]][k-1]*df_j$ct)%*%e_j
         x_list[[j]][, (lx_k + 1):(lx_k + m)] <-
-          -diag(df_j[[predvars[[3]][k-1]]] * df_j$ct) %*% e_j
+          -diag(df_j[[predvars[[3]][k-1]]] * ct_smooth) %*% e_j
       }
     }
     
@@ -454,7 +357,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
       #x_list[[j]][1:m_j,1:m+lx] <- diag(df_j[[predvars[[3]]]][k-1]*df_j$ct)%*%e_j
       woods_index_list[[k]] <- (lx_k + 1):(lx_k + m)
     }
-    
+
   }
   
   ###################################
@@ -555,13 +458,13 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     beta_k2_curr <- beta_curr[(p_r1+1):(p_r1+p_k2)]
     se_beta_k2 <- se_beta[(p_r1+1):(p_r1+p_k2)]
     beta_k2a_curr <- beta_curr[-seq_len(p_r1 + p_k2)]
-    
+
     beta_k2a_intercept_curr <- beta_k2a_curr[1]
     beta_k2a_ref_dev_curr <- c(0, beta_k2a_curr[2:m])
     beta_k2a_mat_curr <- matrix(NA_real_, nrow = m, ncol = p_k2a)
     beta_k2a_mat_curr[, 1] <-
       beta_k2a_ref_dev_curr #+       beta_k2a_intercept_curr
-    
+
     if (p_k2a > 1) {
       for (l in 2:p_k2a) {
         idx_l <- (m * (l - 1) + 1):(m * l)
@@ -573,7 +476,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     # Pointwise SEs for the reconstructed functions use the full posterior
     # covariance, including covariance between the scalar and deviations.
     cov_beta_k2a <- lambda_inv[-seq_len(p_r1 + p_k2),
-                               -seq_len(p_r1 + p_k2), drop = FALSE]
+                                -seq_len(p_r1 + p_k2), drop = FALSE]
     se_beta_k2a_mat <- matrix(NA_real_, nrow = m, ncol = p_k2a)
     #ref_map <- cbind(1, rbind(0, diag(m_ref_dev)))
     ref_map <- cbind(0, rbind(0, diag(m_ref_dev)))
@@ -676,7 +579,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
       sigma_alpha_k2a <- make_gp_cov(ts_all, alpha_theta0,
                                      theta1, theta_nu)
       sigma_alpha_k2a_inv <- solve(sigma_alpha_k2a)
-      
+
       sigma_beta_k2a <- make_sigma_beta_k2a(beta_theta0,
                                             theta1, theta_nu)
       sigma_beta_k2a_inv <- solve(sigma_beta_k2a)
@@ -778,21 +681,13 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     
     #optfun(par_beta_theta0_curr)
     
-    if(control$theta0==TRUE){
-      if(length(par_beta_theta0_curr)==1){
-        optobj <- optim(par_beta_theta0_curr,fn=optfun,method="Brent",lower=1e-10,upper=10)
-      }else{
-        optobj <- optim(par_beta_theta0_curr,fn=optfun)
-      }
-      
-      par_beta_theta0_new <- optobj$par
-      log_model_evidence <- -optobj$value
+    if(length(par_beta_theta0_curr)==1){
+      optobj <- optim(par_beta_theta0_curr,fn=optfun,method="Brent",lower=1e-10,upper=10)
     }else{
-      par_beta_theta0_new <- par_beta_theta0_curr
-      log_model_evidence <- -optfun(par_beta_theta0_curr)
+      optobj <- optim(par_beta_theta0_curr,fn=optfun)
     }
     
-
+    par_beta_theta0_new <- optobj$par
     
     # #######Testing
     # if(par_beta_theta0_new<beta_k2a_intercept_curr^2){
@@ -800,13 +695,13 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     # }
     # ######END TESTING
     
-    
+    log_model_evidence <- -optobj$value
     
     d_par_beta_theta0 <- par_beta_theta0_new - par_beta_theta0_curr
     
     par_beta_theta0_curr <- par_beta_theta0_new
-    
-    
+
+        
     #Also update the full beta_theta0 vector
     beta_theta0_tmp <- c()
     for(k in 1:n_restrictions_kernel){
@@ -816,7 +711,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     beta_theta0_curr <- beta_theta0_tmp
     
     #######Testing
-    
+
     par_kernel_curr$beta_theta0 <- beta_theta0_curr
     ###################
     
@@ -826,7 +721,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     sigma_alpha_k2a <- make_gp_cov(ts_all, alpha_theta0_curr,
                                    theta1_curr, theta_nu_curr)
     sigma_alpha_k2a_inv <- solve(sigma_alpha_k2a)
-    
+
     sigma_beta_k2a <- make_sigma_beta_k2a(beta_theta0_curr,
                                           theta1_curr, theta_nu_curr)
     sigma_beta_k2a_inv <- solve(sigma_beta_k2a)
@@ -972,7 +867,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
     }
   }
   
-  
+
   
   
   woods <- data.frame(beta_index=1:p_k2a-1 ,stat=woods_stat_vec,df=woods_df_vec,pval=woods_p_vec,scale=woods_scale_vec)
@@ -1026,7 +921,7 @@ fit_lgpe_srtm <- function(df, predvars = list(), par_in = list(),
   cov_ref_dev <- cov_beta_k2a[2:m, 2:m, drop = FALSE]
   res$wald_k2a_ref_variation <- as.numeric(
     t(beta_k2a_curr[2:m]) %*% solve(cov_ref_dev,
-                                    beta_k2a_curr[2:m])
+                                     beta_k2a_curr[2:m])
   )
   res$df_k2a_ref_variation <- m_ref_dev
   res$p_k2a_ref_variation <- pchisq(
