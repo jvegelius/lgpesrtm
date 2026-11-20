@@ -1,50 +1,35 @@
-#' Simulate dynamic PET data under the LGPE-SRTM model
-#'
-#' Generates synthetic PET time-activity curves (TACs)
-#' under the latent Gaussian process extension of the
-#' simplified reference tissue model (LGPE-SRTM).
-#'
-#' @param n Number of subjects.
-#' @param t_obs Observation times.
-#' @param onset_time Intervention onset time.
-#' @param activation_amplitude Amplitude of group activation.
-#' @param activation_shape Functional activation shape.
-#' @param common_activation
-#'   Either "gamma", "logistic", or "none".
-#' @param seed Optional random seed.
-#'
-#' @return A list containing:
-#'   \itemize{
-#'     \item \code{df}: simulated PET data
-#'     \item \code{truth}: true latent trajectories
-#'     \item \code{par_in}: default initialization values
-#'     \item \code{predvars}: predictor specification
-#'     \item \code{estpat}: estimation restrictions
-#'     \item \code{control}: optimization settings
-#'   }
-#'
+#' Generate reference and target TACs, true kinetic trajectories, and inputs
+#' for fit_lgpe_srtm().
+#' @param n Positive integer number of subjects. Group membership is sampled
+#'   independently with probability 0.5, so both groups are not guaranteed.
+#' @param t_obs Strictly increasing positive observation times.
+#' @param onset_time Intervention time in the same units as t_obs.
+#' @param activation_amplitude Maximum group activation over the supplied
+#'   observation grid for gamma or logistic activation.
+#' @param activation_shape One of "gamma", "logistic" or "none".
+#' @param common_activation Logical. TRUE uses constant subject-specific
+#'   shifts in k2a. FALSE retains GP variation for activation-group subjects
+#'   and constant shifts for control-group subjects.
+#' @param seed Optional seed passed to set.seed(); changes the global RNG state.
+#' @details
+#'   Reference concentrations have a gamma-shaped trajectory with maximum
+#'   6000. Measurement-error variances equal ten times the true concentration.
+#'   Subject means are R1 = 1, k2 = 0.5 and baseline k2a = 0.1.
+#'   The logistic response is evaluated on max(t_obs - onset_time, 0);
+#'   it has a small nonzero pre-onset value.
+#' @return A list with df (observations, variance weights, true TACs, group
+#'   and onset), truth (population and subject trajectories and shifted times),
+#'   predvars, par_in, estpat and control for fitting, and scalar truths
+#'   beta_r1_true, beta_k2_true, beta_k2a_0_true, r1_true and k2_true.
+#' @seealso fit_lgpe_srtm
+#' @examples
 #' @export
-
-# n = 50
-# t_obs = seq(0.5, 40.5, by = 1)
-# onset_time = 20
-# activation_amplitude = 0.05
-# activation_shape = "gamma"
 simulate_lgpe_pet <- function(
     n = 50,
-    #t_obs = seq(0.5, 40.5, by = 1),
     t_obs = seq(0.5, 60.5, by = 1),
-    #t_obs = seq(0.5, 30.5, by = 1),
-    #t_obs = seq(0.5, 60.5, by = 1),
-    #t_obs = seq(0.5, 60.5, by = 1),
-    #t_obs = seq(0.5, 60.5, by = 1),
-    
-    #onset_time = 20,
+
     onset_time = 40,
-    #onset_time = 10,
-    #onset_time = 10,
-    #onset_time = 30,
-    
+
     activation_amplitude = 0.012,
     activation_shape = "gamma",
     common_activation = TRUE,
