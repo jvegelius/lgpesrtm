@@ -1,25 +1,46 @@
-# LGPE-SRTM with a scalar reference-group level and an anchored
-# reference-group time-varying deviation.
-
+#' Squared-exponential covariance kernel
+#'
+#' Evaluate theta0 * exp(-(sn - sm)^2 / theta1^2).
+#' @param sn Numeric first input location or vector of locations.
+#' @param sm Numeric second input location or vector compatible with sn.
+#' @param theta0 Nonnegative covariance amplitude (variance).
+#' @param theta1 Positive length scale, in the units of the input locations.
+#' @return Numeric kernel values, using R's vector recycling rules.
+#' @keywords internal
 rbf_kernel <- function(sn, sm, theta0, theta1) {
   theta0 * exp(-(sn - sm)^2 / theta1^2)
 }
 
+#' Simulate target and reference time-activity curves
+#'
+#' Solve the backward-difference SRTM equation, then add independent Gaussian
+#' measurement errors with variances proportional to the true concentrations.
+#' @param t_obs Strictly increasing positive observation times, with at least
+#'   two entries. The first difference uses a zero concentration at time zero.
+#' @param cr_true Numeric reference concentrations at t_obs.
+#' @param r1 Scalar relative delivery parameter.
+#' @param k2 Scalar target efflux parameter.
+#' @param k2a Numeric apparent efflux trajectory, one value per observation.
+#' @param var_prop Nonnegative multiplier of the concentration-dependent
+#'   measurement variances. True concentrations must be nonnegative.
+#' @return A list with ct_true, cr_true, ct_obs and cr_obs. Target vectors
+#'   produced by matrix multiplication are returned as one-column matrices.
+#' @keywords internal
 simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
   dt_vec <- c(t_obs[1], diff(t_obs))
   m <- length(dt_vec)
   omega_dt <- matrix(0, nrow = m, ncol = m)
   diag(omega_dt) <- 1 / dt_vec
   diag(omega_dt[2:m, 1:(m - 1)]) <- -1 / dt_vec[-1]
-
+  
   ct_true <- solve(diag(k2a) + omega_dt) %*%
     (k2 * diag(1, m) + r1 * omega_dt) %*% cr_true
-
+  
   sigma_t_vec <- var_prop * ct_true
   sigma_r_vec <- var_prop * cr_true
   ct_obs <- ct_true + rnorm(m, sd = sqrt(sigma_t_vec))
   cr_obs <- cr_true + rnorm(m, sd = sqrt(sigma_r_vec))
-
+  
   list(
     ct_true = ct_true,
     cr_true = cr_true,
@@ -28,24 +49,70 @@ simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
   )
 }
 
-
-# df <- sim_gamma$df
-# predvars <- sim_gamma$predvars
-# par_in <- sim_gamma$par_in
-# estpat <- sim_gamma$estpat
-# control <- sim_gamma$control
-
-# df <- DF_Frick_Amygdala
-# predvars <- Predvars
-# par_in <- Par_in
-# estpat <- Estpat
-# control <- Control
-# sim <- sim_gamma
-# df       = sim$df
-# predvars = sim$predvars
-# par_in   = sim$par_in
-# estpat   = sim$estpat
-# control  = sim$control
+#' Fit hierarchical LGPE-SRTM to dynamic PET observations
+#'
+#' Estimate scalar kinetics and population and subject-specific apparent
+#' efflux trajectories using an iterative transformed mixed model.
+#' @param df Data frame with id, time, ct, cr, wt, wr and onset_time,
+#'   plus the numeric predictor columns named in predvars. Rows within each
+#'   subject must be ordered by strictly increasing positive time. wt and wr
+#'   are positive target and reference measurement-variance weights. onset_time
+#'   is constant within subject.
+#' @param predvars Three-element list of character vectors naming predictors
+#'   for R1, k2 and k2a, respectively. Use NULL for intercept-only components.
+#'   Predictors describe subject-level covariates and should be constant
+#'   within subject.
+#' @param par_in Initialization and prior list. Required entries are R1 and
+#'   k2 (one value per subject, in order of first appearance in df), k2a
+#'   (a list of trajectories on each subject's observation grid), var_prop,
+#'   Sigma_alpha_r1, Sigma_alpha_k2, Sigma_beta_r1, Sigma_beta_k2,
+#'   Sigma_beta_k2a_intercept, Mu_beta_r1, Mu_beta_k2, Mu_beta_k2a,
+#'   beta_theta0, alpha_theta0, theta1, theta_nu and par_beta_theta0.
+#'   Sigma_beta_k2a_intercept is a positive scalar prior variance.
+#'   Prior means follow the coefficient order described below.
+#'   simulate_lgpe_pet() returns a compatible example.
+#' @param estpat Estimation restrictions. kernel_par$beta_theta0 is a binary
+#'   matrix with one column per k2a population component and one row per free
+#'   variance parameter. Each column belongs to one row; entries of
+#'   par_in$par_beta_theta0 provide the corresponding initial variances.
+#' @param control List with positive tol, maxiter (greater than one) and
+#'   optional logical plot_iterations. Convergence uses the maximum absolute
+#'   change in the selected updated parameters.
+#' @details
+#'   The common functional domain is max(time - onset_time, 0).
+#'   The reference-group k2a coefficients consist of a scalar level followed
+#'   by deviations anchored to zero at the first common grid point.
+#'   Each additional k2a predictor contributes a full common-grid curve.
+#'   Mu_beta_k2a uses this same ordering.
+#'   
+#'   The regression response is the backward difference of observed ct.
+#'   Both TACs are smoothed with stats::smooth.spline() for construction of
+#'   the regression design. The working residual covariance uses wt and wr;
+#'   uncertainty from estimating the smoothers is not explicitly propagated.
+#'   theta1 and theta_nu remain fixed during fitting.
+#' @return A list containing:
+#'   \itemize{
+#'     \item Population coefficients and conditional standard errors in beta
+#'       and se_beta, with component-specific beta_r1, beta_k2 and beta_k2a.
+#'     \item beta_k2a_mat and se_beta_k2a_mat on ts_all. The first column is
+#'       the reference-group deviation; add beta_k2a_intercept to obtain its
+#'       absolute trajectory. Other columns are covariate effects.
+#'     \item Subject kinetics r1, k2 and k2a, subject random effects alpha,
+#'       their reported standard errors, and cov_alpha_array.
+#'     \item Updated variance parameters, GP parameters, covariance matrices,
+#'       log_model_evidence and the Wood-type test table woods.
+#'     \item Working matrices including x_list, z_list, y_list, omega_list,
+#'       sigma_list, lambda, lambda_inv and sum_xtvx, plus input df and sizes.
+#'   }
+#' @seealso simulate_lgpe_pet
+#' @examples
+#' \dontrun{
+#' sim <- simulate_lgpe_pet(n = 20, seed = 42)
+#' fit <- fit_lgpe_srtm(sim$df, sim$predvars, sim$par_in,
+#'                      sim$estpat, sim$control)
+#' fit$woods
+#' }
+#' @export
 fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
   
   safe_logdet <- function(A) {
@@ -57,7 +124,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     
     as.numeric(d$modulus)
   }
-
+  
   make_gp_cov <- function(grid, theta0, theta1, theta_nu) {
     q <- length(grid)
     K <- matrix(0, nrow = q, ncol = q)
@@ -72,7 +139,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     diag(K) <- rbf_kernel(0, 0, theta0, theta1) + theta_nu
     K
   }
-
+  
   make_anchored_gp_cov <- function(grid, anchor, theta0, theta1,
                                    theta_nu) {
     q <- length(grid)
@@ -117,7 +184,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
   m <- length(ts_all) #Number of unique points in the domain
   if (m < 2) stop("At least two distinct points in ts_all are required")
   m_ref_dev <- m - 1
-
+  
   # k2a fixed effects are parameterised as:
   #   one scalar reference-group level;
   #   m - 1 reference-group deviations, anchored to zero at ts_all[1];
@@ -150,7 +217,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
   sigma_alpha_k2a <- make_gp_cov(ts_all, alpha_theta0_curr,
                                  theta1_curr, theta_nu_curr)
   sigma_alpha_k2a_inv <- solve(sigma_alpha_k2a)
-
+  
   if (is.null(par_in$Sigma_beta_k2a_intercept)) {
     stop("par_in$Sigma_beta_k2a_intercept must specify the prior variance of the scalar k2a reference-group level")
   }
@@ -160,7 +227,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
       sigma_beta_k2a_intercept <= 0) {
     stop("par_in$Sigma_beta_k2a_intercept must be one positive finite number")
   }
-
+  
   make_sigma_beta_k2a <- function(beta_theta0, theta1, theta_nu) {
     K <- as.matrix(bdiag(
       sigma_beta_k2a_intercept,
@@ -177,7 +244,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     }
     K
   }
-
+  
   sigma_beta_k2a <- make_sigma_beta_k2a(beta_theta0_curr,
                                         theta1_curr, theta_nu_curr)
   sigma_beta_k2a_inv <- solve(sigma_beta_k2a)
@@ -261,7 +328,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     ct_smooth <- ct_fit$y
     
     
-  
+    
     x_list[[j]][,1] <- omega_dt%*%cr_smooth
     z_list[[j]][,1] <- omega_dt%*%cr_smooth
     if(is.null(predvars[[1]])==FALSE){
@@ -289,7 +356,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     
     # Scalar reference-group level.
     x_list[[j]][, lx + 1] <- -ct_smooth
-
+    
     # Reference-group time variation, anchored to zero at ts_all[1].
     x_list[[j]][, (lx + 2):(lx + m)] <-
       -diag(ct_smooth) %*% e_j[, -1, drop = FALSE]
@@ -357,7 +424,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
       #x_list[[j]][1:m_j,1:m+lx] <- diag(df_j[[predvars[[3]]]][k-1]*df_j$ct)%*%e_j
       woods_index_list[[k]] <- (lx_k + 1):(lx_k + m)
     }
-
+    
   }
   
   ###################################
@@ -429,10 +496,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
       
     }
     
-    # plot(diag(sum_xtvx))
-    # plot(diag(sigma_beta_inv))
-    # plot(diag(sigma_beta))
-    
+
     #sigma_beta_inv <- solve(as.matrix(sigma_beta))
     lambda <- sigma_beta_inv +  sum_xtvx
     lambda_inv <- solve(lambda)
@@ -458,13 +522,13 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     beta_k2_curr <- beta_curr[(p_r1+1):(p_r1+p_k2)]
     se_beta_k2 <- se_beta[(p_r1+1):(p_r1+p_k2)]
     beta_k2a_curr <- beta_curr[-seq_len(p_r1 + p_k2)]
-
+    
     beta_k2a_intercept_curr <- beta_k2a_curr[1]
     beta_k2a_ref_dev_curr <- c(0, beta_k2a_curr[2:m])
     beta_k2a_mat_curr <- matrix(NA_real_, nrow = m, ncol = p_k2a)
     beta_k2a_mat_curr[, 1] <-
       beta_k2a_ref_dev_curr #+       beta_k2a_intercept_curr
-
+    
     if (p_k2a > 1) {
       for (l in 2:p_k2a) {
         idx_l <- (m * (l - 1) + 1):(m * l)
@@ -476,7 +540,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     # Pointwise SEs for the reconstructed functions use the full posterior
     # covariance, including covariance between the scalar and deviations.
     cov_beta_k2a <- lambda_inv[-seq_len(p_r1 + p_k2),
-                                -seq_len(p_r1 + p_k2), drop = FALSE]
+                               -seq_len(p_r1 + p_k2), drop = FALSE]
     se_beta_k2a_mat <- matrix(NA_real_, nrow = m, ncol = p_k2a)
     #ref_map <- cbind(1, rbind(0, diag(m_ref_dev)))
     ref_map <- cbind(0, rbind(0, diag(m_ref_dev)))
@@ -579,7 +643,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
       sigma_alpha_k2a <- make_gp_cov(ts_all, alpha_theta0,
                                      theta1, theta_nu)
       sigma_alpha_k2a_inv <- solve(sigma_alpha_k2a)
-
+      
       sigma_beta_k2a <- make_sigma_beta_k2a(beta_theta0,
                                             theta1, theta_nu)
       sigma_beta_k2a_inv <- solve(sigma_beta_k2a)
@@ -700,8 +764,8 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     d_par_beta_theta0 <- par_beta_theta0_new - par_beta_theta0_curr
     
     par_beta_theta0_curr <- par_beta_theta0_new
-
-        
+    
+    
     #Also update the full beta_theta0 vector
     beta_theta0_tmp <- c()
     for(k in 1:n_restrictions_kernel){
@@ -711,7 +775,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     beta_theta0_curr <- beta_theta0_tmp
     
     #######Testing
-
+    
     par_kernel_curr$beta_theta0 <- beta_theta0_curr
     ###################
     
@@ -721,7 +785,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     sigma_alpha_k2a <- make_gp_cov(ts_all, alpha_theta0_curr,
                                    theta1_curr, theta_nu_curr)
     sigma_alpha_k2a_inv <- solve(sigma_alpha_k2a)
-
+    
     sigma_beta_k2a <- make_sigma_beta_k2a(beta_theta0_curr,
                                           theta1_curr, theta_nu_curr)
     sigma_beta_k2a_inv <- solve(sigma_beta_k2a)
@@ -867,7 +931,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
     }
   }
   
-
+  
   
   
   woods <- data.frame(beta_index=1:p_k2a-1 ,stat=woods_stat_vec,df=woods_df_vec,pval=woods_p_vec,scale=woods_scale_vec)
@@ -921,7 +985,7 @@ fit_lgpe_srtm <- function(df,predvars,par_in,estpat,control){
   cov_ref_dev <- cov_beta_k2a[2:m, 2:m, drop = FALSE]
   res$wald_k2a_ref_variation <- as.numeric(
     t(beta_k2a_curr[2:m]) %*% solve(cov_ref_dev,
-                                     beta_k2a_curr[2:m])
+                                    beta_k2a_curr[2:m])
   )
   res$df_k2a_ref_variation <- m_ref_dev
   res$p_k2a_ref_variation <- pchisq(
