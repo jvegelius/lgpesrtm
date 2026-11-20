@@ -1,5 +1,7 @@
-#' Generate reference and target TACs, true kinetic trajectories, and inputs
-#' for fit_lgpe_srtm().
+#' Simulate dynamic PET data
+#'
+#' Generate reference and target time-activity curves (TACs), true kinetic
+#' trajectories, and inputs for \code{\link{fit_lgpe_srtm}}.
 #' @param n Positive integer number of subjects. Group membership is sampled
 #'   independently with probability 0.5, so both groups are not guaranteed.
 #' @param t_obs Strictly increasing positive observation times.
@@ -21,8 +23,10 @@
 #'   and onset), truth (population and subject trajectories and shifted times),
 #'   predvars, par_in, estpat and control for fitting, and scalar truths
 #'   beta_r1_true, beta_k2_true, beta_k2a_0_true, r1_true and k2_true.
-#' @seealso fit_lgpe_srtm
+#' @seealso \code{\link{fit_lgpe_srtm}}
 #' @examples
+#' sim <- simulate_lgpe_pet(n = 4, seed = 42)
+#' head(sim$df)
 #' @export
 simulate_lgpe_pet <- function(
     n = 50,

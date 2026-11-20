@@ -15,6 +15,18 @@ cumtrapz_vec <- function(time, y) {
   c(0, cumsum(diff(time) * (y[-length(y)] + y[-1]) / 2))
 }
 
+#' Evaluate a gamma-variate response
+#'
+#' The response is zero through onset and peaks at one at \code{tP} for
+#' positive \code{alpha}. It is zero everywhere if \code{tP <= tD}.
+#' @param time Numeric vector of times at which to evaluate the response.
+#' @param tD Response onset time.
+#' @param tP Time of peak response.
+#' @param alpha Positive shape parameter.
+#' @return A numeric vector of response values with one entry per input time.
+#' @examples
+#' gamma_variate_h(time = 0:8, tD = 2, tP = 5, alpha = 2)
+#' @export
 gamma_variate_h <- function(time, tD, tP, alpha) {
   h <- numeric(length(time))
   
@@ -92,6 +104,28 @@ build_lpntpet_basis_catalog <- function(time,
 # lp-ntPET fitting
 # =========================
 
+#' Fit lp-ntPET using a basis catalog
+#'
+#' Fit a weighted regression for each candidate gamma-variate response and
+#' select the candidate with the smallest weighted residual sum of squares.
+#' @param time Increasing observation times, with at least two entries.
+#' @param ct Target time-activity curve on the observation grid.
+#' @param cr Reference time-activity curve on the observation grid.
+#' @param t_onset Intervention onset time, used to construct the default
+#'   catalog of candidate responses.
+#' @param weights Optional nonnegative regression weights, one per
+#'   observation. The default gives every observation equal weight.
+#' @param basis_catalog Optional list with a \code{basis} list of candidate
+#'   responses on the observation grid and a \code{meta} data frame with one
+#'   row per candidate. The default catalog depends on \code{time} and
+#'   \code{t_onset}.
+#' @return A list with the selected coefficient estimates and fit statistics
+#'   in \code{estimates}, the fitted values and residuals, the selected
+#'   response in \code{h_best}, its integrated product with the target curve
+#'   in \code{int_ct_h_best}, the full candidate \code{profile}, and the
+#'   \code{basis_catalog} used.
+#' @seealso \code{\link{gamma_variate_h}}
+#' @export
 fit_lpntpet_catalog <- function(time, ct, cr,t_onset, weights = NULL, basis_catalog = NULL) {
   stopifnot(length(time) == length(ct), length(ct) == length(cr))
   
