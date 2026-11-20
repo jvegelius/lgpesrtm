@@ -1,0 +1,11 @@
+^reproduce$
+^coverage_results\.RData$
+^coverage\.pdf$
+^functional_performance_combined\.pdf$
+^functional_performance_results\.rds$
+^group_functional_performance\.csv$
+^group_perform_metrics\.pdf$
+^Rplots\.pdf$
+^scalar_performance_table\.csv$
+^subject_functional_performance\.csv$
+^subject_perform_metrics\.pdf$

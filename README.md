@@ -1,7 +1,8 @@
 # LGPE-SRTM scalar-intercept reproduction workflow
 
-This directory is a self-contained set of the four R scripts needed to run
-`reproduce_figure_ex.R` with the revised fixed-effect parameterisation.
+This R package fits the LGPE-SRTM model and includes a script for
+reproducing the simulated PET example with the revised fixed-effect
+parameterisation.
 
 ## Model parameterisation
 
@@ -23,28 +24,18 @@ install.packages(c("ggplot2", "dplyr", "Matrix", "mvtnorm", "patchwork"))
 
 ## Run
 
-Set the working directory to this directory (the directory containing this
-README and `reproduce_figure_ex.R`), then run:
+From an R session with its working directory set to the repository root,
+install the package and run the bundled example:
 
 ```r
-source("reproduce_figure_ex.R")
+install.packages(normalizePath("."), repos = NULL, type = "source")
+example <- new.env()
+sys.source(system.file("reproduce", "figure_ex.R", package = "lgpesrtm",
+                       mustWork = TRUE), envir = example)
+print(example$p_k2a)
+print(example$p_activation_beta)
 ```
 
-For example, in RStudio open `reproduce_figure_ex.R`, use **Session > Set Working
-Directory > To Source File Location**, and then click **Source**.
-
-The script sources these files automatically:
-
-- `R/lgpe_srtm.R`
-- `R/simulation.R`
-- `R/lpntpet_comparison.R`
-
-It writes the PDF figures to the working directory.
-
-
-## Validation note
-
-The scripts include explicit checks of the new prior dimensions before model
-fitting. Their brackets, parentheses, file paths, and cross-file object names
-have also been checked. This environment did not contain an R executable, so a
-full numerical run could not be performed here.
+Add `fit$beta_k2a_intercept` to `fit$beta_k2a_mat[, 1]` to reconstruct the
+reference-group function. `fit$beta_k2a_mat[, 2]` is the group-effect
+function.

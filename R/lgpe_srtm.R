@@ -70,7 +70,7 @@ simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
 #'   beta_theta0, alpha_theta0, theta1, theta_nu and par_beta_theta0.
 #'   Sigma_beta_k2a_intercept is a positive scalar prior variance.
 #'   Prior means follow the coefficient order described below.
-#'   simulate_lgpe_pet() returns a compatible example.
+#'   \code{\link{simulate_lgpe_pet}} returns compatible inputs.
 #' @param estpat Estimation restrictions. kernel_par$beta_theta0 is a binary
 #'   matrix with one column per k2a population component and one row per free
 #'   variance parameter. Each column belongs to one row; entries of
@@ -84,7 +84,7 @@ simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
 #'   by deviations anchored to zero at the first common grid point.
 #'   Each additional k2a predictor contributes a full common-grid curve.
 #'   Mu_beta_k2a uses this same ordering.
-#'   
+#'
 #'   The regression response is the backward difference of observed ct.
 #'   Both TACs are smoothed with stats::smooth.spline() for construction of
 #'   the regression design. The working residual covariance uses wt and wr;
@@ -104,7 +104,7 @@ simulate_tac <- function(t_obs, cr_true, r1, k2, k2a, var_prop) {
 #'     \item Working matrices including x_list, z_list, y_list, omega_list,
 #'       sigma_list, lambda, lambda_inv and sum_xtvx, plus input df and sizes.
 #'   }
-#' @seealso simulate_lgpe_pet
+#' @seealso \code{\link{simulate_lgpe_pet}}
 #' @examples
 #' \dontrun{
 #' sim <- simulate_lgpe_pet(n = 20, seed = 42)

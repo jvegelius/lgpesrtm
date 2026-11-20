@@ -8,6 +8,7 @@ Description: Fits the LGPE-SRTM model, simulates dynamic PET data, and
 License: file LICENSE
 Encoding: UTF-8
 Imports:
+    graphics,
     Matrix,
     mvtnorm,
     stats

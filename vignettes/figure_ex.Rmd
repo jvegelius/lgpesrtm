@@ -18,9 +18,11 @@ The simulation returns the observed time–activity curves in `df`, the
 latent trajectories in `truth`.
 To fit your own data, supply one row per subject and frame (long format) with columns
 `id`, `time` (minutes from scan start), `ct` (target TAC), `cr`
-(reference TAC), and `onset_time` (minutes from scan start, constant
-within subject). This example also uses a numeric `group` column coded
-0 for control and 1 for activation. The following code shows the gamma case. 
+(reference TAC), `wt` and `wr` (positive target and reference
+measurement-variance weights), and `onset_time` (minutes from scan
+start, constant within subject). This example also uses a numeric `group`
+column coded 0 for control and 1 for activation. The following code shows
+the gamma case.
 
 ```{r fit, eval=FALSE}
 library(lgpesrtm)
@@ -34,7 +36,10 @@ df <- sim$df
 
 fit <- fit_lgpe_srtm(
   df = df,
-  predvars = list(k2a = "group")
+  predvars = sim$predvars,
+  par_in = sim$par_in,
+  estpat = sim$estpat,
+  control = sim$control
 )
 
 fit$k2a[[1]]              # Fitted curve for the first subject
@@ -43,23 +48,24 @@ fit$beta_k2a_mat[, 2]     # Activation-minus-control curve
 
 ## Change fitting settings
 
-Pass only the settings you want to change. This example turns on
-iteration plots while keeping the default tolerance of `1e-4` and
-iteration limit of `1000`.
+Copy the simulation's fitting controls and update the settings you want
+to change. This example turns on iteration plots.
 
 ```{r control, eval=FALSE}
+control <- sim$control
+control$plot_iterations <- TRUE
+
 fit_with_plots <- fit_lgpe_srtm(
   df = df,
-  predvars = list(k2a = "group"),
-  control = list(plot_iterations = TRUE)
+  predvars = sim$predvars,
+  par_in = sim$par_in,
+  estpat = sim$estpat,
+  control = control
 )
 ```
 
-The default fit shares a fixed-effect GP amplitude across the
-`k2a` terms. The default kernel length scale is 10 minutes and the
-starting value for the noise variance proportionality factor is 10.
-You can override entries in `par_in`, for example with
-`par_in = list(theta1 = 8)` to use an 8-minute length scale.
+To use an 8-minute kernel length scale, copy `sim$par_in`, set
+`par_in$theta1 <- 8`, and pass the updated list to `fit_lgpe_srtm()`.
 
 ## Reproduce the plots
 
